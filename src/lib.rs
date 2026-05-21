@@ -9,37 +9,49 @@ pub mod url {
     //                   [    ]   [      ][   ]
 
     use std::str::FromStr;
+    use std::{error::Error, fmt};
+
+    #[derive(Debug)]
+    pub enum UrlParseError {
+        UnsupportedScheme,
+        UnrecognizedStructure,
+    }
+
+    impl Error for UrlParseError {}
+
+    impl fmt::Display for UrlParseError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                UrlParseError::UnsupportedScheme => write!(f, "Unsupported URL scheme"),
+                UrlParseError::UnrecognizedStructure => write!(f, "Unrecognized URL structure"),
+            }
+        }
+    }
 
     #[derive(Debug, PartialEq)]
-    enum Scheme {
+    pub enum Scheme {
         Http,
         Https,
     }
 
-    #[derive(Debug)]
-    struct UnsupportedSchemeError;
-
     impl FromStr for Scheme {
-        type Err = UnsupportedSchemeError;
+        type Err = UrlParseError;
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             match s {
                 "http" => Ok(Scheme::Http),
                 "https" => Ok(Scheme::Https),
-                _ => Err(UnsupportedSchemeError),
+                _ => Err(UrlParseError::UnsupportedScheme),
             }
         }
     }
 
     #[derive(Debug)]
     pub struct Url {
-        scheme: Scheme,
-        hostname: String,
-        path: String,
+        pub scheme: Scheme,
+        pub hostname: String,
+        pub path: String,
     }
-
-    #[derive(Debug, PartialEq)]
-    pub struct UrlParseError;
 
     impl FromStr for Url {
         type Err = UrlParseError;
@@ -52,11 +64,15 @@ pub mod url {
             }
 
             // Determine the scheme
-            let (raw_scheme, remainder) = normalized_s.split_once("://").ok_or(UrlParseError)?;
-            let scheme = Scheme::from_str(raw_scheme).map_err(|_| UrlParseError)?;
+            let (raw_scheme, remainder) = normalized_s
+                .split_once("://")
+                .ok_or(UrlParseError::UnrecognizedStructure)?;
+            let scheme = Scheme::from_str(raw_scheme)?;
 
             // Determine the hostname and path
-            let (hostname, path) = remainder.split_once("/").ok_or(UrlParseError)?;
+            let (hostname, path) = remainder
+                .split_once("/")
+                .ok_or(UrlParseError::UnrecognizedStructure)?;
 
             Ok(Url {
                 scheme,
@@ -88,7 +104,20 @@ pub mod url {
 
         #[test]
         fn parse_url_with_invalid_scheme() {
-            assert!(Url::from_str("invalid://example.org").is_err_and(|e| e == UrlParseError));
+            let result = Url::from_str("invalid://example.org");
+            assert!(
+                result.is_err_and(|e| matches!(e, UrlParseError::UnsupportedScheme)
+                    && e.to_string() == "Unsupported URL scheme")
+            );
+        }
+
+        #[test]
+        fn parse_url_with_unrecognized_structure() {
+            let result = Url::from_str("http:example.org");
+            assert!(
+                result.is_err_and(|e| matches!(e, UrlParseError::UnrecognizedStructure)
+                    && e.to_string() == "Unrecognized URL structure")
+            );
         }
     }
 }
