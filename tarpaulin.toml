@@ -1,0 +1,5 @@
+[test_config]
+force-clean = true
+engine = "Llvm"
+line-coverage = true
+branch-coverage = true
