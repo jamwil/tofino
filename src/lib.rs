@@ -1,5 +1,29 @@
 #!warn[(clippy:all, clippy:pedantic)]
+
+//! # Tofino
+//!
 //! **The fingerpaint version of a web browser.**
+//!
+//! Use it like this:
+//!
+//! ```
+//! use std::error::Error;
+//! use std::str::FromStr;
+//! use tofino::url::Url;
+//!
+//! fn main() -> Result<(), Box<dyn Error>> {
+//!   // We'll fake the raw url but you could retrieve it from the cli args like so:
+//!   // let raw_url = std::env::args().next_back().unwrap();
+//!   let raw_url = "http://example.org/";
+//!
+//!   let url = Url::from_str(&raw_url)?;
+//!
+//!   // Do something fun, more fun than this I hope
+//!   println!("{:#?}", url);
+//!
+//!   Ok(())
+//! }
+//! ```
 
 /// Parses a URL into a normalized data structure for downstream marshalling.
 ///
@@ -91,7 +115,7 @@ pub mod url {
 
         fn from_str(s: &str) -> Result<Self, Self::Err> {
             // Append an empty path if none is specified
-            let mut normalized_s = s.to_owned();
+            let mut normalized_s = s.to_ascii_lowercase();
             if !normalized_s.ends_with("/") {
                 normalized_s += "/";
             }
