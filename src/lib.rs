@@ -1,16 +1,37 @@
 #!warn[(clippy:all, clippy:pedantic)]
+//! **The fingerpaint version of a web browser.**
 
+/// Parses a URL into a normalized data structure for downstream marshalling.
+///
+/// # Examples
+///
+/// ```
+/// use std::str::FromStr;
+/// use tofino::url::{Url, Scheme};
+///
+/// let url = Url::from_str("http://example.org").unwrap();
+/// assert_eq!(url.scheme, Scheme::Http);
+/// assert_eq!(url.hostname, "example.org");
+/// assert_eq!(url.path, "/");
+/// ```
+///
+/// # Architecture
+///
+/// The first decision point when the browser receives a request to load a resource will be the
+/// scheme, so we'll pivot the application entry point on that and provide semi-robust error
+/// handling for determining how and where a provided URL might be malformed.
+///
+/// The resulting [`url::Url`] struct will be composed of a [`url::Scheme`] enum, along with `String` fields for
+/// hostname and path.
+///
+/// # Errors
+///
+/// - [`url::UrlParseError`]
 pub mod url {
-    // Parts that vary:
-    // - scheme (http, https, data, file, etc.)
-    // - http version (secondary if scheme is http/https)
-    //
-    // A url consists of scheme://hostname/path
-    //                   [    ]   [      ][   ]
-
     use std::str::FromStr;
     use std::{error::Error, fmt};
 
+    /// Provides basic error details propogated from `Url::from_str`.
     #[derive(Debug)]
     pub enum UrlParseError {
         UnsupportedScheme,
@@ -28,6 +49,7 @@ pub mod url {
         }
     }
 
+    /// The protocol or method that we'll use to interact with or display the resource.
     #[derive(Debug, PartialEq)]
     pub enum Scheme {
         Http,
@@ -46,6 +68,17 @@ pub mod url {
         }
     }
 
+    /// Represents a normalized `Url`.
+    ///
+    /// ```text
+    /// scheme://hostname/path/
+    /// [....]   [......][....]
+    /// ```
+    ///
+    /// When parsed using `std::str::FromStr` a trailing slash is added if not explicitly provided,
+    /// such that `http://example.org` and `http://example.org/` will resolve the same way.
+    ///
+    /// See [`super::url`] for a usage example.
     #[derive(Debug)]
     pub struct Url {
         pub scheme: Scheme,
@@ -63,16 +96,12 @@ pub mod url {
                 normalized_s += "/";
             }
 
-            // Determine the scheme
+            // Determine the scheme, hostname and path
             let (raw_scheme, remainder) = normalized_s
                 .split_once("://")
                 .ok_or(UrlParseError::UnrecognizedStructure)?;
             let scheme = Scheme::from_str(raw_scheme)?;
-
-            // Determine the hostname and path
-            let (hostname, path) = remainder
-                .split_once("/")
-                .ok_or(UrlParseError::UnrecognizedStructure)?;
+            let (hostname, path) = remainder.split_once("/").unwrap();
 
             Ok(Url {
                 scheme,
