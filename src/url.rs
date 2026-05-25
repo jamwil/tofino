@@ -99,6 +99,7 @@ impl FromStr for Url {
             .ok_or(UrlParseError::UnrecognizedStructure)?;
         let scheme = Scheme::from_str(raw_scheme)?;
         let (hostname, path) = remainder.split_once("/").unwrap();
+        // Note: we unwrap safely since we explicitly added the '/' .: `split_once` is infallible
 
         Ok(Url {
             scheme,
