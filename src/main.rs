@@ -27,9 +27,13 @@ fn cli() -> Result<(), Box<dyn Error>> {
     }
 
     // Extract and display the normalized URL
-    let raw_url = args.last().unwrap();
+    let raw_url = args.last().ok_or(CliError)?;
     let url = Url::from_str(raw_url)?;
     println!("{:#?}", url);
+
+    // Send a request and print the response
+    let response = url.request()?;
+    println!("{}", response);
 
     Ok(())
 }
@@ -37,6 +41,6 @@ fn cli() -> Result<(), Box<dyn Error>> {
 #[cfg(not(tarpaulin_include))]
 fn main() {
     if let Err(e) = cli() {
-        println!("{}", e);
+        eprintln!("{}", e);
     }
 }

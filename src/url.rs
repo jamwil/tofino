@@ -25,6 +25,8 @@
 //!
 //! - [`UrlParseError`]
 
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::str::FromStr;
 use std::{error::Error, fmt};
 
@@ -106,6 +108,25 @@ impl FromStr for Url {
             hostname: hostname.to_owned(),
             path: String::from("/") + path,
         })
+    }
+}
+
+impl Url {
+    pub fn request(&self) -> std::io::Result<String> {
+        // Construct the request, temorarily hardcoding port 80 for now
+        let socket_addr = self.hostname.clone() + ":80";
+        let request = format!(
+            "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n",
+            &self.path, &self.hostname
+        );
+
+        // Create a TCP socket connection and send the request
+        let mut stream = TcpStream::connect(socket_addr)?;
+        let mut buffer = String::new();
+        stream.write_all(&request.into_bytes())?;
+        stream.read_to_string(&mut buffer)?;
+
+        Ok(buffer)
     }
 }
 
