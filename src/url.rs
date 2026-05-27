@@ -8,7 +8,7 @@
 //!
 //! let url = Url::from_str("http://example.org").unwrap();
 //! assert_eq!(url.scheme, Scheme::Http);
-//! assert_eq!(url.hostname, "example.org");
+//! assert_eq!(url.host, "example.org");
 //! assert_eq!(url.path, "/");
 //! ```
 //!
@@ -25,6 +25,7 @@
 //!
 //! - [`UrlParseError`]
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::FromStr;
@@ -67,6 +68,98 @@ impl FromStr for Scheme {
     }
 }
 
+#[derive(Debug)]
+pub enum ResponseParseError {
+    EmptyResponse,
+    BadVersion,
+    BadStatus,
+    BadExplanation,
+    BadHeaders,
+    BadHeader,
+}
+
+impl Error for ResponseParseError {}
+
+impl fmt::Display for ResponseParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Could not parse the response")
+    }
+}
+
+pub struct HttpResponse {
+    pub version: String,
+    pub status: String,
+    pub explanation: String,
+    pub headers: HashMap<String, String>,
+    pub body: String,
+}
+
+impl FromStr for HttpResponse {
+    type Err = ResponseParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut lines = s.lines();
+
+        let version: String;
+        let status: String;
+        let explanation: String;
+        let mut headers: HashMap<String, String> = HashMap::new();
+        let body: String;
+
+        // Parse the statusline
+        if let Some(statusline) = lines.next() {
+            let mut statusline_split = statusline.splitn(3, " ");
+            version = statusline_split
+                .next()
+                .ok_or(ResponseParseError::BadVersion)?
+                .to_ascii_lowercase();
+            status = statusline_split
+                .next()
+                .ok_or(ResponseParseError::BadStatus)?
+                .to_ascii_lowercase();
+            explanation = statusline_split
+                .next()
+                .ok_or(ResponseParseError::BadExplanation)?
+                .to_ascii_lowercase();
+        } else {
+            return Err(ResponseParseError::EmptyResponse);
+        }
+
+        // Parse the headers
+        loop {
+            if let Some(headerline_candidate) = lines.next() {
+                // If it's an empty line, we're finished with headers; the next line will be the body
+                if headerline_candidate == "" {
+                    break;
+                }
+
+                // Try to split the header
+                let (key, value) = headerline_candidate
+                    .split_once(": ")
+                    .ok_or(ResponseParseError::BadHeader)?;
+
+                // Put it in the bank (and preserve case for header values)
+                headers.insert(key.to_ascii_lowercase(), value.to_owned());
+            } else {
+                return Err(ResponseParseError::BadHeaders);
+            }
+        }
+
+        // Parse the body (nested scope is for consistency)
+        {
+            body = lines.collect();
+        }
+
+        Ok(HttpResponse {
+            version,
+            status,
+            explanation,
+            headers,
+            body,
+        })
+    }
+}
+
 /// Represents a normalized `Url`.
 ///
 /// ```text
@@ -81,7 +174,8 @@ impl FromStr for Scheme {
 #[derive(Debug)]
 pub struct Url {
     pub scheme: Scheme,
-    pub hostname: String,
+    pub host: String,
+    pub port: usize,
     pub path: String,
 }
 
@@ -100,24 +194,25 @@ impl FromStr for Url {
             .split_once("://")
             .ok_or(UrlParseError::UnrecognizedStructure)?;
         let scheme = Scheme::from_str(raw_scheme)?;
-        let (hostname, path) = remainder.split_once("/").unwrap();
-        // Note: we unwrap safely since we explicitly added the '/' .: `split_once` is infallible
+        let (authority, path) = remainder.split_once("/").unwrap();
+        let (hostname, port) = authority.split_once(":").unwrap_or((authority, "80"));
 
         Ok(Url {
             scheme,
-            hostname: hostname.to_owned(),
+            host: hostname.to_ascii_lowercase(),
+            port: port.parse().unwrap(),
             path: String::from("/") + path,
         })
     }
 }
 
 impl Url {
-    pub fn request(&self) -> std::io::Result<String> {
+    pub fn request(&self) -> std::io::Result<HttpResponse> {
         // Construct the request, temorarily hardcoding port 80 for now
-        let socket_addr = self.hostname.clone() + ":80";
+        let socket_addr = self.host.clone() + ":" + &self.port.to_string();
         let request = format!(
             "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n",
-            &self.path, &self.hostname
+            &self.path, &self.host
         );
 
         // Create a TCP socket connection and send the request
@@ -125,20 +220,31 @@ impl Url {
         let mut buffer = String::new();
         stream.write_all(&request.into_bytes())?;
         stream.read_to_string(&mut buffer)?;
+        let response = HttpResponse::from_str(&buffer).unwrap();
 
-        Ok(buffer)
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
 
     #[test]
     fn parse_valid_http_url_with_inferred_root_path() {
         let url = Url::from_str("http://example.org").unwrap();
         assert_eq!(url.scheme, Scheme::Http);
-        assert_eq!(url.hostname, "example.org");
+        assert_eq!(url.host, "example.org");
+        assert_eq!(url.path, "/");
+    }
+
+    #[test]
+    fn parse_valid_http_url_with_explicit_port() {
+        let url = Url::from_str("http://example.org:8080").unwrap();
+        assert_eq!(url.scheme, Scheme::Http);
+        assert_eq!(url.host, "example.org");
+        assert_eq!(url.port, 8080);
         assert_eq!(url.path, "/");
     }
 
@@ -146,7 +252,7 @@ mod tests {
     fn parse_valid_https_url_with_inferred_root_path() {
         let url = Url::from_str("https://example.org").unwrap();
         assert_eq!(url.scheme, Scheme::Https);
-        assert_eq!(url.hostname, "example.org");
+        assert_eq!(url.host, "example.org");
         assert_eq!(url.path, "/");
     }
 
@@ -166,5 +272,28 @@ mod tests {
             result.is_err_and(|e| matches!(e, UrlParseError::UnrecognizedStructure)
                 && e.to_string() == "Unrecognized URL structure")
         );
+    }
+
+    #[test]
+    fn make_a_request() {
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method("GET").path("/");
+            then.status(200)
+                .header("Content-Type", "text/html; charset=UTF-8")
+                .body("hola");
+        });
+
+        let url = Url::from_str(&server.url("/")).unwrap();
+        let response = url.request().unwrap();
+
+        mock.assert();
+
+        assert_eq!(response.status, "200");
+        assert_eq!(
+            response.headers.get("content-type").unwrap(),
+            "text/html; charset=UTF-8"
+        );
+        assert_eq!(response.body, "hola");
     }
 }
