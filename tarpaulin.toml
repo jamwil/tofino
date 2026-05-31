@@ -1,5 +1,5 @@
 [test_config]
-force-clean = true
+force-clean = false
 engine = "Llvm"
 line-coverage = true
 branch-coverage = true
