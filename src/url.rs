@@ -134,13 +134,13 @@ impl FromStr for HttpResponse {
                 .to_ascii_uppercase()
                 .as_str()
             {
-                "HTTP/1.0" => "HTTP/1.0".to_string(),
+                "HTTP/1.0" => "HTTP/1.0".to_string(), // todo: This will be an enum
                 v => Err(ResponseParseError::BadVersion(v.to_owned()))?,
             };
             status = statusline_split
                 .next()
                 .ok_or(ResponseParseError::BadStatus(statusline.to_owned()))?
-                .to_ascii_uppercase();
+                .to_ascii_uppercase(); // todo: This will be a u16
             explanation = statusline_split
                 .next()
                 .ok_or(ResponseParseError::BadExplanation(statusline.to_owned()))?
