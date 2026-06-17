@@ -49,25 +49,6 @@ impl fmt::Display for UrlParseError {
     }
 }
 
-/// The protocol or method that we'll use to interact with or display the resource.
-#[derive(Debug, PartialEq)]
-pub enum Scheme {
-    Http,
-    Https,
-}
-
-impl FromStr for Scheme {
-    type Err = UrlParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "http" => Ok(Scheme::Http),
-            "https" => Ok(Scheme::Https),
-            _ => Err(UrlParseError::UnsupportedScheme),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum ResponseParseError {
     EmptyResponse,
@@ -105,8 +86,32 @@ impl fmt::Display for ResponseParseError {
     }
 }
 
+/// The protocol or method that we'll use to interact with or display the resource.
+#[derive(Debug, PartialEq)]
+pub enum Scheme {
+    Http,
+    Https,
+}
+
+impl FromStr for Scheme {
+    type Err = UrlParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "http" => Ok(Scheme::Http),
+            "https" => Ok(Scheme::Https),
+            _ => Err(UrlParseError::UnsupportedScheme),
+        }
+    }
+}
+
+pub enum HttpVersion {
+    Http10,
+    Http11,
+}
+
 pub struct HttpResponse {
-    pub version: String,
+    pub version: HttpVersion,
     pub status: String,
     pub explanation: String,
     pub headers: HashMap<String, String>,
@@ -119,7 +124,7 @@ impl FromStr for HttpResponse {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut lines = s.lines();
 
-        let version: String;
+        let version;
         let status: String;
         let explanation: String;
         let mut headers: HashMap<String, String> = HashMap::new();
@@ -134,13 +139,14 @@ impl FromStr for HttpResponse {
                 .to_ascii_uppercase()
                 .as_str()
             {
-                "HTTP/1.0" => "HTTP/1.0".to_string(), // todo: This will be an enum
+                "HTTP/1.0" => HttpVersion::Http10,
+                "HTTP/1.1" => HttpVersion::Http11,
                 v => Err(ResponseParseError::BadVersion(v.to_owned()))?,
             };
             status = statusline_split
                 .next()
                 .ok_or(ResponseParseError::BadStatus(statusline.to_owned()))?
-                .to_ascii_uppercase(); // todo: This will be a u16
+                .to_ascii_uppercase();
             explanation = statusline_split
                 .next()
                 .ok_or(ResponseParseError::BadExplanation(statusline.to_owned()))?
