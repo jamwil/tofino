@@ -26,5 +26,7 @@
 //! ```
 
 pub mod cli;
+pub mod config;
 pub mod html;
+pub mod schemes;
 pub mod url;

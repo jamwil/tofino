@@ -25,12 +25,12 @@
 //!
 //! - [`UrlParseError`]
 
-use native_tls::TlsConnector;
-use std::collections::HashMap;
-use std::io::{self, Read, Write};
-use std::net::TcpStream;
 use std::str::FromStr;
 use std::{error::Error, fmt};
+
+use crate::schemes::Request;
+use crate::schemes::http::{HttpRequest, HttpVersion};
+use crate::schemes::https::HttpsRequest;
 
 /// Provides basic error details propogated from `Url::from_str`.
 #[derive(Debug)]
@@ -46,43 +46,6 @@ impl fmt::Display for UrlParseError {
         match self {
             UrlParseError::UnsupportedScheme => write!(f, "Unsupported URL scheme"),
             UrlParseError::UnrecognizedStructure => write!(f, "Unrecognized URL structure"),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ResponseParseError {
-    EmptyResponse,
-    BadVersion(String),
-    BadStatus(String),
-    BadExplanation(String),
-    BadHeaders,
-    BadHeader(String),
-}
-
-impl Error for ResponseParseError {}
-
-impl fmt::Display for ResponseParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ResponseParseError::EmptyResponse => write!(f, "Received an empty response"),
-            ResponseParseError::BadVersion(s) => {
-                write!(f, "Could not interpret HTTP version: {}", s)
-            }
-            ResponseParseError::BadStatus(s) => write!(
-                f,
-                "Could not interpret HTTP status code from status line: {}",
-                s
-            ),
-            ResponseParseError::BadExplanation(s) => {
-                write!(
-                    f,
-                    "Could not interpret HTTP explanation from status line: {}",
-                    s
-                )
-            }
-            ResponseParseError::BadHeaders => write!(f, "Could not parse HTTP response headers"),
-            ResponseParseError::BadHeader(s) => write!(f, "Could not parse header: {}", s),
         }
     }
 }
@@ -103,94 +66,6 @@ impl FromStr for Scheme {
             "https" => Ok(Scheme::Https),
             _ => Err(UrlParseError::UnsupportedScheme),
         }
-    }
-}
-
-pub enum HttpVersion {
-    Http10,
-    Http11,
-}
-
-pub struct HttpResponse {
-    pub version: HttpVersion,
-    pub status: String,
-    pub explanation: String,
-    pub headers: HashMap<String, String>,
-    pub body: String,
-}
-
-impl FromStr for HttpResponse {
-    type Err = ResponseParseError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut lines = s.lines();
-
-        let version;
-        let status: String;
-        let explanation: String;
-        let mut headers: HashMap<String, String> = HashMap::new();
-        let body: String;
-
-        // Parse the statusline
-        if let Some(statusline) = lines.next() {
-            let mut statusline_split = statusline.splitn(3, " ");
-            version = match statusline_split
-                .next()
-                .unwrap()
-                .to_ascii_uppercase()
-                .as_str()
-            {
-                "HTTP/1.0" => HttpVersion::Http10,
-                "HTTP/1.1" => HttpVersion::Http11,
-                v => Err(ResponseParseError::BadVersion(v.to_owned()))?,
-            };
-            status = statusline_split
-                .next()
-                .ok_or(ResponseParseError::BadStatus(statusline.to_owned()))?
-                .to_ascii_uppercase();
-            explanation = statusline_split
-                .next()
-                .ok_or(ResponseParseError::BadExplanation(statusline.to_owned()))?
-                .to_ascii_uppercase();
-        } else {
-            return Err(ResponseParseError::EmptyResponse);
-        }
-
-        // Parse the headers
-        loop {
-            if let Some(headerline_candidate) = lines.next() {
-                // If it's an empty line, we're finished with headers; the next line will be the body
-                if headerline_candidate.is_empty() {
-                    break;
-                }
-
-                // Try to split the header
-                let (key, value) =
-                    headerline_candidate
-                        .split_once(": ")
-                        .ok_or(ResponseParseError::BadHeader(
-                            headerline_candidate.to_owned(),
-                        ))?;
-
-                // Put it in the bank (and preserve case for header values)
-                headers.insert(key.to_ascii_lowercase(), value.to_owned());
-            } else {
-                return Err(ResponseParseError::BadHeaders);
-            }
-        }
-
-        // Parse the body (nested scope is for consistency)
-        {
-            body = lines.collect();
-        }
-
-        Ok(HttpResponse {
-            version,
-            status,
-            explanation,
-            headers,
-            body,
-        })
     }
 }
 
@@ -242,35 +117,32 @@ impl FromStr for Url {
 }
 
 impl Url {
-    pub fn request(&self) -> io::Result<HttpResponse> {
-        // Construct the request
-        let socket_addr = self.host.clone() + ":" + &self.port.to_string();
-        let request = format!(
-            "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n",
-            &self.path, &self.host
-        );
-
-        // Create a TCP socket connection and send the request
-        let mut buffer = String::new();
+    pub fn request(&self) -> Result<String, Box<dyn Error>> {
+        // Note - I initially tried to return `impl Response` here, but rust book 10.2 indicates
+        // that we must return a single type. It doesn't give--at least to my eye--a satisfying
+        // answer for why this is. We also can't utilize dynamic dispatch as-is because the FromStr
+        // trait bound on Response is Sized, and Sized is not dyn compatible.
         match self.scheme {
             Scheme::Http => {
-                let mut stream = TcpStream::connect(socket_addr)?;
-                stream.write_all(&request.into_bytes())?;
-                stream.read_to_string(&mut buffer)?;
+                let request = HttpRequest {
+                    version: HttpVersion::Http10,
+                    host: &self.host,
+                    port: self.port,
+                    path: &self.path,
+                };
+                let response = request.get()?;
+                Ok(response.to_string())
             }
             Scheme::Https => {
-                let connector = TlsConnector::new().unwrap();
-                let tcp_stream = TcpStream::connect(socket_addr)?;
-                let mut stream = connector.connect(&self.host, tcp_stream).unwrap();
-                stream.write_all(&request.into_bytes())?;
-                stream.read_to_string(&mut buffer)?;
+                let request = HttpsRequest {
+                    version: HttpVersion::Http10,
+                    host: &self.host,
+                    port: self.port,
+                    path: &self.path,
+                };
+                let response = request.get()?;
+                Ok(response.to_string())
             }
-        }
-
-        // Parse the response or propogate the error
-        match HttpResponse::from_str(&buffer) {
-            Ok(response) => Ok(response),
-            Err(e) => Err(io::Error::other(e)),
         }
     }
 }
@@ -278,7 +150,6 @@ impl Url {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use httpmock::prelude::*;
 
     #[test]
     fn parse_valid_http_url_with_inferred_root_path() {
@@ -321,95 +192,5 @@ mod tests {
             result.is_err_and(|e| matches!(e, UrlParseError::UnrecognizedStructure)
                 && e.to_string() == "Unrecognized URL structure")
         );
-    }
-
-    #[test]
-    fn parse_empty_response() {
-        let response = "";
-        let result = HttpResponse::from_str(response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::EmptyResponse)
-                && e.to_string() == "Received an empty response")
-        );
-    }
-
-    #[test]
-    fn parse_response_with_bad_version() {
-        let statusline = String::from("HTTP/2.0 200 OK");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
-        let result = HttpResponse::from_str(&response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::BadVersion(_))
-                && e.to_string() == "Could not interpret HTTP version: HTTP/2.0")
-        );
-    }
-
-    #[test]
-    fn parse_response_with_bad_status_code() {
-        let statusline = String::from("HTTP/1.0");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
-        let result = HttpResponse::from_str(&response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::BadStatus(_))
-                && e.to_string()
-                    == "Could not interpret HTTP status code from status line: HTTP/1.0")
-        );
-    }
-
-    #[test]
-    fn parse_response_with_bad_explanation() {
-        let statusline = String::from("HTTP/1.0 200");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
-        let result = HttpResponse::from_str(&response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::BadExplanation(_))
-                && e.to_string()
-                    == "Could not interpret HTTP explanation from status line: HTTP/1.0 200")
-        );
-    }
-
-    #[test]
-    fn parse_response_with_bad_headers() {
-        let statusline = String::from("HTTP/1.0 200 OK");
-        let response = statusline + "\r\n";
-        let result = HttpResponse::from_str(&response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::BadHeaders)
-                && e.to_string() == "Could not parse HTTP response headers")
-        );
-    }
-
-    #[test]
-    fn parse_response_with_bad_header() {
-        let statusline = String::from("HTTP/1.0 200 OK");
-        let response = statusline + "\r\nContent-Type; text/html\r\n";
-        let result = HttpResponse::from_str(&response);
-        assert!(
-            result.is_err_and(|e| matches!(e, ResponseParseError::BadHeader(_))
-                && e.to_string() == "Could not parse header: Content-Type; text/html")
-        );
-    }
-
-    #[test]
-    fn make_a_successful_request() {
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.method("GET").path("/");
-            then.status(200)
-                .header("Content-Type", "text/html; charset=UTF-8")
-                .body("hola");
-        });
-
-        let url = Url::from_str(&server.url("/")).unwrap();
-        let response = url.request().unwrap();
-
-        mock.assert();
-
-        assert_eq!(response.status, "200");
-        assert_eq!(
-            response.headers.get("content-type").unwrap(),
-            "text/html; charset=UTF-8"
-        );
-        assert_eq!(response.body, "hola");
     }
 }

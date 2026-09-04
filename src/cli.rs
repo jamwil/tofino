@@ -1,8 +1,8 @@
+use crate::html;
+use crate::url::Url;
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
-use crate::html;
-use crate::url::Url;
 
 #[derive(Debug)]
 pub struct CliError;
@@ -26,7 +26,6 @@ pub fn cli(args: Vec<String>) -> Result<String, Box<dyn Error>> {
     let url = Url::from_str(raw_url)?;
 
     // Send a request and return the response
-    let response = url.request()?;
-    Ok(html::show(&response.body))
+    let content = url.request()?;
+    Ok(html::show(&content))
 }
-

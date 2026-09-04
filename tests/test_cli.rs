@@ -20,7 +20,7 @@ fn test_too_many_arguments() {
 }
 
 #[test]
-fn test_just_right_arguments() {
+fn test_get_request() {
     let server = MockServer::start();
     let mock = server.mock(|when, then| {
         when.method("GET").path("/");
