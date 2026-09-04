@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
 use std::str::FromStr;
+use crate::html;
 use crate::url::Url;
 
 #[derive(Debug)]
@@ -26,6 +27,6 @@ pub fn cli(args: Vec<String>) -> Result<String, Box<dyn Error>> {
 
     // Send a request and return the response
     let response = url.request()?;
-    Ok(response.body)
+    Ok(html::show(&response.body))
 }
 

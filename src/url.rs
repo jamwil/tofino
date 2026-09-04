@@ -25,6 +25,7 @@
 //!
 //! - [`UrlParseError`]
 
+use native_tls::TlsConnector;
 use std::collections::HashMap;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
@@ -216,19 +217,20 @@ impl FromStr for Url {
     type Err = UrlParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // Append an empty path if none is specified
-        let mut normalized_s = s.to_ascii_lowercase();
-        if !normalized_s.ends_with("/") {
-            normalized_s += "/";
-        }
+        let normalized_s = s.to_ascii_lowercase();
 
-        // Determine the scheme, hostname and path
         let (raw_scheme, remainder) = normalized_s
             .split_once("://")
             .ok_or(UrlParseError::UnrecognizedStructure)?;
         let scheme = Scheme::from_str(raw_scheme)?;
-        let (authority, path) = remainder.split_once("/").unwrap();
-        let (hostname, port) = authority.split_once(":").unwrap_or((authority, "80"));
+        let default_port = match scheme {
+            Scheme::Http => "80",
+            Scheme::Https => "443",
+        };
+        let (authority, path) = remainder.split_once("/").unwrap_or((remainder, ""));
+        let (hostname, port) = authority
+            .split_once(":")
+            .unwrap_or((authority, default_port));
 
         Ok(Url {
             scheme,
@@ -241,7 +243,7 @@ impl FromStr for Url {
 
 impl Url {
     pub fn request(&self) -> io::Result<HttpResponse> {
-        // Construct the request, temorarily hardcoding port 80 for now
+        // Construct the request
         let socket_addr = self.host.clone() + ":" + &self.port.to_string();
         let request = format!(
             "GET {} HTTP/1.0\r\nHost: {}\r\n\r\n",
@@ -249,10 +251,21 @@ impl Url {
         );
 
         // Create a TCP socket connection and send the request
-        let mut stream = TcpStream::connect(socket_addr)?;
         let mut buffer = String::new();
-        stream.write_all(&request.into_bytes())?;
-        stream.read_to_string(&mut buffer)?;
+        match self.scheme {
+            Scheme::Http => {
+                let mut stream = TcpStream::connect(socket_addr)?;
+                stream.write_all(&request.into_bytes())?;
+                stream.read_to_string(&mut buffer)?;
+            }
+            Scheme::Https => {
+                let connector = TlsConnector::new().unwrap();
+                let tcp_stream = TcpStream::connect(socket_addr)?;
+                let mut stream = connector.connect(&self.host, tcp_stream).unwrap();
+                stream.write_all(&request.into_bytes())?;
+                stream.read_to_string(&mut buffer)?;
+            }
+        }
 
         // Parse the response or propogate the error
         match HttpResponse::from_str(&buffer) {
