@@ -1,3 +1,5 @@
+use super::{BuildResource, CreateRequest, ResponseParseError};
+use crate::resources::{Resource, WebResource};
 use std::{
     collections::HashMap,
     error::Error,
@@ -6,45 +8,6 @@ use std::{
     net::TcpStream,
     str::FromStr,
 };
-
-use crate::schemes::{Request, Response};
-
-#[derive(Debug)]
-pub enum ResponseParseError {
-    EmptyResponse,
-    BadVersion(String),
-    BadStatus(String),
-    BadExplanation(String),
-    BadHeaders,
-    BadHeader(String),
-}
-
-impl Error for ResponseParseError {}
-
-impl fmt::Display for ResponseParseError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ResponseParseError::EmptyResponse => write!(f, "Received an empty response"),
-            ResponseParseError::BadVersion(s) => {
-                write!(f, "Could not interpret HTTP version: {}", s)
-            }
-            ResponseParseError::BadStatus(s) => write!(
-                f,
-                "Could not interpret HTTP status code from status line: {}",
-                s
-            ),
-            ResponseParseError::BadExplanation(s) => {
-                write!(
-                    f,
-                    "Could not interpret HTTP explanation from status line: {}",
-                    s
-                )
-            }
-            ResponseParseError::BadHeaders => write!(f, "Could not parse HTTP response headers"),
-            ResponseParseError::BadHeader(s) => write!(f, "Could not parse header: {}", s),
-        }
-    }
-}
 
 pub enum HttpVersion {
     Http10,
@@ -79,8 +42,8 @@ pub struct HttpRequest<'a> {
     pub path: &'a str,
 }
 
-impl<'a> Request for HttpRequest<'a> {
-    fn get(&self) -> Result<impl Response, Box<dyn Error>> {
+impl<'a> CreateRequest for HttpRequest<'a> {
+    fn get(&self) -> Result<impl BuildResource, Box<dyn Error>> {
         // Construct the request
         let socket_addr = self.host.to_string() + ":" + &self.port.to_string();
         let request = format!(
@@ -106,8 +69,6 @@ pub struct HttpResponse {
     pub headers: HashMap<String, String>,
     pub body: String,
 }
-
-impl Response for HttpResponse {}
 
 impl FromStr for HttpResponse {
     type Err = ResponseParseError;
@@ -175,9 +136,14 @@ impl FromStr for HttpResponse {
     }
 }
 
-impl Display for HttpResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.body)
+impl BuildResource for HttpResponse {
+    fn build_resource(&self) -> Resource {
+        Resource::Web(WebResource {
+            response_status: self.status.clone(),
+            response_explanation: self.explanation.clone(),
+            response_headers: self.headers.clone(),
+            response_body: self.body.clone(),
+        })
     }
 }
 

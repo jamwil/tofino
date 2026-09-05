@@ -26,6 +26,6 @@ pub fn cli(args: Vec<String>) -> Result<String, Box<dyn Error>> {
     let url = Url::from_str(raw_url)?;
 
     // Send a request and return the response
-    let content = url.request()?;
-    Ok(html::show(&content))
+    let resource = url.request()?;
+    Ok(html::show(&resource.to_string()))
 }

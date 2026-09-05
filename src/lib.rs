@@ -28,5 +28,6 @@
 pub mod cli;
 pub mod config;
 pub mod html;
+pub mod resources;
 pub mod schemes;
 pub mod url;

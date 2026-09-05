@@ -1,14 +1,12 @@
+use super::http::{HttpResponse, HttpVersion};
+use super::{BuildResource, CreateRequest, ResponseParseError};
+use crate::resources::{Resource, WebResource};
+use native_tls::TlsConnector;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::Display;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::str::FromStr;
-
-use native_tls::TlsConnector;
-
-use crate::schemes::http::{HttpResponse, HttpVersion, ResponseParseError};
-use crate::schemes::{Request, Response};
 
 pub struct HttpsRequest<'a> {
     pub version: HttpVersion,
@@ -17,8 +15,8 @@ pub struct HttpsRequest<'a> {
     pub path: &'a str,
 }
 
-impl<'a> Request for HttpsRequest<'a> {
-    fn get(&self) -> Result<impl Response, Box<dyn Error>> {
+impl<'a> CreateRequest for HttpsRequest<'a> {
+    fn get(&self) -> Result<impl BuildResource, Box<dyn Error>> {
         // Construct the request
         let socket_addr = self.host.to_string() + ":" + &self.port.to_string();
         let request = format!(
@@ -30,7 +28,7 @@ impl<'a> Request for HttpsRequest<'a> {
         let mut buffer = String::new();
         let connector = TlsConnector::new().unwrap();
         let tcp_stream = TcpStream::connect(socket_addr)?;
-        let mut stream = connector.connect(&self.host, tcp_stream).unwrap();
+        let mut stream = connector.connect(self.host, tcp_stream).unwrap();
         stream.write_all(&request.into_bytes())?;
         stream.read_to_string(&mut buffer)?;
 
@@ -46,8 +44,6 @@ pub struct HttpsResponse {
     pub headers: HashMap<String, String>,
     pub body: String,
 }
-
-impl Response for HttpsResponse {}
 
 impl FromStr for HttpsResponse {
     type Err = ResponseParseError;
@@ -66,8 +62,13 @@ impl FromStr for HttpsResponse {
     }
 }
 
-impl Display for HttpsResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.body)
+impl BuildResource for HttpsResponse {
+    fn build_resource(&self) -> Resource {
+        Resource::Web(WebResource {
+            response_status: self.status.clone(),
+            response_explanation: self.explanation.clone(),
+            response_headers: self.headers.clone(),
+            response_body: self.body.clone(),
+        })
     }
 }

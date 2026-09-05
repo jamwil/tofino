@@ -28,9 +28,10 @@
 use std::str::FromStr;
 use std::{error::Error, fmt};
 
-use crate::schemes::Request;
+use crate::resources::Resource;
 use crate::schemes::http::{HttpRequest, HttpVersion};
 use crate::schemes::https::HttpsRequest;
+use crate::schemes::{BuildResource, CreateRequest};
 
 /// Provides basic error details propogated from `Url::from_str`.
 #[derive(Debug)]
@@ -117,11 +118,16 @@ impl FromStr for Url {
 }
 
 impl Url {
-    pub fn request(&self) -> Result<String, Box<dyn Error>> {
+    pub fn request(&self) -> Result<Resource, Box<dyn Error>> {
         // Note - I initially tried to return `impl Response` here, but rust book 10.2 indicates
         // that we must return a single type. It doesn't give--at least to my eye--a satisfying
         // answer for why this is. We also can't utilize dynamic dispatch as-is because the FromStr
         // trait bound on Response is Sized, and Sized is not dyn compatible.
+        //
+        // What I'm doing instead is adding a Resource enum that is separate from the
+        // request-response round-trip. This decouples the transport from the resource itself, and
+        // gives us a layer to parse headers, etc. into useable data. Feels like excessive and leaky
+        // abstraction but I have a hunch it may help avoid a combinatorial explosion down the road.
         match self.scheme {
             Scheme::Http => {
                 let request = HttpRequest {
@@ -131,7 +137,7 @@ impl Url {
                     path: &self.path,
                 };
                 let response = request.get()?;
-                Ok(response.to_string())
+                Ok(response.build_resource())
             }
             Scheme::Https => {
                 let request = HttpsRequest {
@@ -141,7 +147,7 @@ impl Url {
                     path: &self.path,
                 };
                 let response = request.get()?;
-                Ok(response.to_string())
+                Ok(response.build_resource())
             }
         }
     }
