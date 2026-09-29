@@ -14,3 +14,7 @@ pub fn show(body: &str) -> String {
     }
     output
 }
+
+pub fn show_source(body: &str) -> String {
+    body.to_string()
+}

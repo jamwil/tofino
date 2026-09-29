@@ -21,18 +21,18 @@ impl<'a> CreateRequest for HttpsRequest<'a> {
         let socket_addr = self.host.to_string() + ":" + &self.port.to_string();
         let request = format!(
             "GET {} {}\r\nHost: {}\r\n\r\n",
-            &self.path, &self.version, &self.host
+            self.path, self.version, self.host
         );
 
         // Create a TCP socket connection and send the request
         let mut buffer = String::new();
-        let connector = TlsConnector::new().unwrap();
+        let connector = TlsConnector::new()?;
         let tcp_stream = TcpStream::connect(socket_addr)?;
-        let mut stream = connector.connect(self.host, tcp_stream).unwrap();
+        let mut stream = connector.connect(self.host, tcp_stream)?;
         stream.write_all(&request.into_bytes())?;
         stream.read_to_string(&mut buffer)?;
 
-        // Parse the response or propogate the error
+        // Parse the response or propagate the error
         Ok(HttpsResponse::from_str(&buffer)?)
     }
 }

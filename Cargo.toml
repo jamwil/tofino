@@ -8,6 +8,3 @@ native-tls = "0.2.18"
 
 [dev-dependencies]
 httpmock = "0.8.3"
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

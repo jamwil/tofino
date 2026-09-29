@@ -14,12 +14,12 @@
 //!
 //! # Architecture
 //!
-//! The first decision point when the browser receives a request to load a resource will be the
-//! scheme, so we'll pivot the application entry point on that and provide semi-robust error
-//! handling for determining how and where a provided URL might be malformed.
+//! The first decision point when the browser receives a request to load a
+//! resource will be the scheme, so we pivot the application entry point on that
+//! and provide semi-robust error handling.
 //!
-//! The resulting [`Url`] struct will be composed of a [`Scheme`] enum, along with `String` fields for
-//! hostname and path.
+//! The resulting [`Url`] struct will be composed of a [`Scheme`] enum, along
+//! with `String` fields for hostname and path.
 //!
 //! # Errors
 //!
@@ -33,7 +33,7 @@ use crate::schemes::http::{HttpRequest, HttpVersion};
 use crate::schemes::https::HttpsRequest;
 use crate::schemes::{BuildResource, CreateRequest};
 
-/// Provides basic error details propogated from `Url::from_str`.
+/// Provides basic error details propagated from `Url::from_str`.
 #[derive(Debug)]
 pub enum UrlParseError {
     UnsupportedScheme,
@@ -51,7 +51,8 @@ impl fmt::Display for UrlParseError {
     }
 }
 
-/// The protocol or method that we'll use to interact with or display the resource.
+/// The protocol or method that we'll use to interact with or display the
+/// resource.
 #[derive(Debug, PartialEq)]
 pub enum Scheme {
     Http,
@@ -77,8 +78,8 @@ impl FromStr for Scheme {
 /// [....]   [......][....]
 /// ```
 ///
-/// When parsed using `std::str::FromStr` a trailing slash is added if not explicitly provided,
-/// such that `http://example.org` and `http://example.org/` will resolve the same way.
+/// When parsed using `std::str::FromStr` a trailing slash is added if not
+/// explicitly provided, such that `http://example.org` and `http://example.org/` will resolve the same way.
 ///
 /// See [`super::url`] for a usage example.
 #[derive(Debug)]
@@ -119,15 +120,17 @@ impl FromStr for Url {
 
 impl Url {
     pub fn request(&self) -> Result<Resource, Box<dyn Error>> {
-        // Note - I initially tried to return `impl Response` here, but rust book 10.2 indicates
-        // that we must return a single type. It doesn't give--at least to my eye--a satisfying
-        // answer for why this is. We also can't utilize dynamic dispatch as-is because the FromStr
-        // trait bound on Response is Sized, and Sized is not dyn compatible.
+        // Note - I initially tried to return `impl Response` here, but rust book 10.2
+        // indicates that we must return a single type. It doesn't give--at
+        // least to my eye--a satisfying answer for why this is. We also can't
+        // utilize dynamic dispatch as-is because the FromStr trait bound on
+        // Response is Sized, and Sized is not dyn compatible.
         //
         // What I'm doing instead is adding a Resource enum that is separate from the
-        // request-response round-trip. This decouples the transport from the resource itself, and
-        // gives us a layer to parse headers, etc. into useable data. Feels like excessive and leaky
-        // abstraction but I have a hunch it may help avoid a combinatorial explosion down the road.
+        // request-response round-trip. This decouples the transport from the resource
+        // itself, and gives us a layer to parse headers, etc. into useable
+        // data. Feels like excessive and leaky abstraction, but I have a hunch
+        // it may help avoid a combinatorial explosion down the road.
         match self.scheme {
             Scheme::Http => {
                 let request = HttpRequest {

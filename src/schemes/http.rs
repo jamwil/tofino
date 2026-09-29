@@ -48,7 +48,7 @@ impl<'a> CreateRequest for HttpRequest<'a> {
         let socket_addr = self.host.to_string() + ":" + &self.port.to_string();
         let request = format!(
             "GET {} {}\r\nHost: {}\r\n\r\n",
-            &self.path, &self.version, &self.host
+            self.path, self.version, self.host
         );
 
         // Create a TCP socket connection and send the request
@@ -57,7 +57,7 @@ impl<'a> CreateRequest for HttpRequest<'a> {
         stream.write_all(&request.into_bytes())?;
         stream.read_to_string(&mut buffer)?;
 
-        // Parse the response or propogate the error
+        // Parse the response or propagate the error
         Ok(HttpResponse::from_str(&buffer)?)
     }
 }
@@ -82,17 +82,17 @@ impl FromStr for HttpResponse {
         let mut headers: HashMap<String, String> = HashMap::new();
         let body: String;
 
-        // Parse the statusline
-        if let Some(statusline) = lines.next() {
-            let mut statusline_split = statusline.splitn(3, " ");
-            version = statusline_split.next().unwrap().parse()?;
-            status = statusline_split
+        // Parse the status_line
+        if let Some(status_line) = lines.next() {
+            let mut status_line_split = status_line.splitn(3, " ");
+            version = status_line_split.next().unwrap().parse()?;
+            status = status_line_split
                 .next()
-                .ok_or(ResponseParseError::BadStatus(statusline.to_owned()))?
+                .ok_or(ResponseParseError::BadStatus(status_line.to_owned()))?
                 .to_ascii_uppercase();
-            explanation = statusline_split
+            explanation = status_line_split
                 .next()
-                .ok_or(ResponseParseError::BadExplanation(statusline.to_owned()))?
+                .ok_or(ResponseParseError::BadExplanation(status_line.to_owned()))?
                 .to_ascii_uppercase();
         } else {
             return Err(ResponseParseError::EmptyResponse);
@@ -100,18 +100,19 @@ impl FromStr for HttpResponse {
 
         // Parse the headers
         loop {
-            if let Some(headerline_candidate) = lines.next() {
-                // If it's an empty line, we're finished with headers; the next line will be the body
-                if headerline_candidate.is_empty() {
+            if let Some(header_line_candidate) = lines.next() {
+                // If it's an empty line, we're finished with headers; the next line will be the
+                // body
+                if header_line_candidate.is_empty() {
                     break;
                 }
 
                 // Try to split the header
                 let (key, value) =
-                    headerline_candidate
+                    header_line_candidate
                         .split_once(": ")
                         .ok_or(ResponseParseError::BadHeader(
-                            headerline_candidate.to_owned(),
+                            header_line_candidate.to_owned(),
                         ))?;
 
                 // Put it in the bank (and preserve case for header values)
@@ -123,7 +124,8 @@ impl FromStr for HttpResponse {
 
         // Parse the body (nested scope is for consistency)
         {
-            body = lines.collect();
+            let remaining_lines: Vec<&str> = lines.collect();
+            body = remaining_lines.join("\n");
         }
 
         Ok(HttpResponse {
@@ -163,8 +165,8 @@ mod tests {
 
     #[test]
     fn parse_response_with_bad_version() {
-        let statusline = String::from("HTTP/2.0 200 OK");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
+        let status_line = String::from("HTTP/2.0 200 OK");
+        let response = status_line + "\r\nContent-Type: text/html\r\n";
         let result = HttpResponse::from_str(&response);
         assert!(
             result.is_err_and(|e| matches!(e, ResponseParseError::BadVersion(_))
@@ -174,8 +176,8 @@ mod tests {
 
     #[test]
     fn parse_response_with_bad_status_code() {
-        let statusline = String::from("HTTP/1.0");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
+        let status_line = String::from("HTTP/1.0");
+        let response = status_line + "\r\nContent-Type: text/html\r\n";
         let result = HttpResponse::from_str(&response);
         assert!(
             result.is_err_and(|e| matches!(e, ResponseParseError::BadStatus(_))
@@ -186,8 +188,8 @@ mod tests {
 
     #[test]
     fn parse_response_with_bad_explanation() {
-        let statusline = String::from("HTTP/1.0 200");
-        let response = statusline + "\r\nContent-Type: text/html\r\n";
+        let status_line = String::from("HTTP/1.0 200");
+        let response = status_line + "\r\nContent-Type: text/html\r\n";
         let result = HttpResponse::from_str(&response);
         assert!(
             result.is_err_and(|e| matches!(e, ResponseParseError::BadExplanation(_))
@@ -198,8 +200,8 @@ mod tests {
 
     #[test]
     fn parse_response_with_bad_headers() {
-        let statusline = String::from("HTTP/1.0 200 OK");
-        let response = statusline + "\r\n";
+        let status_line = String::from("HTTP/1.0 200 OK");
+        let response = status_line + "\r\n";
         let result = HttpResponse::from_str(&response);
         assert!(
             result.is_err_and(|e| matches!(e, ResponseParseError::BadHeaders)
@@ -209,8 +211,8 @@ mod tests {
 
     #[test]
     fn parse_response_with_bad_header() {
-        let statusline = String::from("HTTP/1.0 200 OK");
-        let response = statusline + "\r\nContent-Type; text/html\r\n";
+        let status_line = String::from("HTTP/1.0 200 OK");
+        let response = status_line + "\r\nContent-Type; text/html\r\n";
         let result = HttpResponse::from_str(&response);
         assert!(
             result.is_err_and(|e| matches!(e, ResponseParseError::BadHeader(_))
