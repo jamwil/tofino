@@ -30,4 +30,5 @@ pub mod config;
 pub mod html;
 pub mod resources;
 pub mod schemes;
+pub mod tui;
 pub mod url;

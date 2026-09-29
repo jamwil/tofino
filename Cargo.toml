@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+crossterm = "0.29.0"
 native-tls = "0.2.18"
+ratatui = "0.30.2"
 
 [dev-dependencies]
 httpmock = "0.8.3"
